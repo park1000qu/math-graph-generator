@@ -17,7 +17,8 @@ categories = [
     "일차함수", "이차함수", "다항함수: 3차/4차함수", "유리함수", "무리함수", 
     "지수함수", "로그함수", 
     "삼각함수: 사인(sin)", "삼각함수: 코사인(cos)", "삼각함수: 탄젠트(tan)",
-    "미적분: 구간별 정의 함수 (불연속/극한)", "정적분함수 (넓이 색칠)"
+    "미적분: 구간별 정의 함수 (불연속/극한)", "정적분함수 (넓이 색칠)",
+    "기하: 원의 방정식", "기하: 이차곡선 (포물선, 타원, 쌍곡선)"
 ]
 category = st.selectbox("과목 및 단원 선택", categories)
 
@@ -48,11 +49,10 @@ def parse_func(expr_str):
 
 bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 
-# --- 세션 상태 초기화 (엔터키 리스트용) ---
+# --- 세션 상태 초기화 ---
 if 'pts_list' not in st.session_state: 
     st.session_state.pts_list = []
 else:
-    # 이전 버전 호환성 유지 (딕셔너리 구조 업데이트)
     for i in range(len(st.session_state.pts_list)):
         if isinstance(st.session_state.pts_list[i], str):
             st.session_state.pts_list[i] = {"raw": st.session_state.pts_list[i], "hide_coord": False, "hide_line": False, "label_pos": "오른쪽 위"}
@@ -100,7 +100,11 @@ with col_left:
         ax.plot(x_default, a * (x_default - p)**2 + q, 'black', linewidth=1.5, zorder=5)
 
     elif category == "다항함수: 3차/4차함수":
-        expr_str = st.text_input("함수식 입력 (예: x**3 - 3*x 또는 (x-1)*(x-2)**2)", value="x**3 - 3*x")
+        expr_str = st.text_input("함수식 입력 (예: x**3 - 3*x)", value="x**3 - 3*x")
+        draw_tan = st.checkbox("접선 그리기")
+        if draw_tan:
+            tan_x_val = st.number_input("접점의 x좌표", value=1.0)
+            
         try:
             expr_sym = parse_func(expr_str)
             st.latex(sp.latex(expr_sym))
@@ -108,6 +112,17 @@ with col_left:
             y = f(x_default)
             if np.isscalar(y): y = np.full_like(x_default, y)
             ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
+            
+            # 💡 다항함수 자동 미분 및 접선 그리기
+            if draw_tan:
+                df_sym = sp.diff(expr_sym, x_sym)
+                df = sp.lambdify(x_sym, df_sym, ['numpy', {'e': np.e}])
+                slope = float(df(tan_x_val))
+                y_val = float(f(tan_x_val))
+                
+                tan_y = slope * (x_default - tan_x_val) + y_val
+                ax.plot(x_default, tan_y, 'black', linewidth=1.0, zorder=4)
+                ax.plot(tan_x_val, y_val, 'ko', markersize=5, zorder=15) # 접점 쾅
         except: pass
 
     elif category == "유리함수":
@@ -172,54 +187,102 @@ with col_left:
             y[np.abs(np.cos(b * (x_default - p))) < 0.05] = np.nan 
         ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
 
-    elif category == "미적분: 구간별 정의 함수 (불연속/극한)":
-        boundary = st.number_input("구간 기준점 (x = c)", value=1.0)
-        c1, c2 = st.columns(2)
-        with c1:
-            expr_str_L = st.text_input("왼쪽 함수식", value="x**2")
-            inc_L = st.checkbox(f"포함 (≤)", value=False)
-            try: f_L = sp.lambdify(x_sym, parse_func(expr_str_L), ['numpy', {'e': np.e}])
-            except: pass
-        with c2:
-            expr_str_R = st.text_input("오른쪽 함수식", value="-x + 3")
-            inc_R = st.checkbox(f"포함 (≥)", value=True)
-            try: f_R = sp.lambdify(x_sym, parse_func(expr_str_R), ['numpy', {'e': np.e}])
-            except: pass
+    elif category == "기하: 원의 방정식":
+        st.latex(r"(x - a)^2 + (y - b)^2 = r^2")
+        c1, c2, c3 = st.columns(3)
+        with c1: a_circ = st.number_input("중심 x (a)", value=0.0)
+        with c2: b_circ = st.number_input("중심 y (b)", value=0.0)
+        with c3: r_circ = st.number_input("반지름 (r)", value=3.0, min_value=0.1)
+        
+        draw_tan_circ = st.checkbox("이 원에 접선 그리기")
+        if draw_tan_circ:
+            tan_c1, tan_c2 = st.columns(2)
+            with tan_c1: tan_cx = st.number_input("접점 x좌표", value=a_circ + r_circ/np.sqrt(2))
+            with tan_c2: half_choice = st.radio("접점 위치", ["상단 점 (y > b)", "하단 점 (y < b)"])
+        
+        # 원 그리기 (매개변수)
+        theta = np.linspace(0, 2*np.pi, 1000)
+        circ_x = a_circ + r_circ * np.cos(theta)
+        circ_y = b_circ + r_circ * np.sin(theta)
+        ax.plot(circ_x, circ_y, 'black', linewidth=1.5, zorder=5)
+        
+        # 중심점 표시
+        ax.plot(a_circ, b_circ, 'ko', markersize=3, zorder=5)
 
-        try:
-            x_L = np.linspace(plot_x_min, boundary, 1500)
-            x_R = np.linspace(boundary, plot_x_max, 1500)
-            y_L, y_R = f_L(x_L), f_R(x_R)
-            if np.isscalar(y_L): y_L = np.full_like(x_L, y_L)
-            if np.isscalar(y_R): y_R = np.full_like(x_R, y_R)
+        # 💡 원의 접선 그리기
+        if draw_tan_circ:
+            if abs(tan_cx - a_circ) <= r_circ + 1e-6: # 원의 정의구역 내일 때
+                y_offset = np.sqrt(max(0, r_circ**2 - (tan_cx - a_circ)**2))
+                tan_cy = b_circ + y_offset if "상단" in half_choice else b_circ - y_offset
+                ax.plot(tan_cx, tan_cy, 'ko', markersize=5, zorder=15)
+                
+                # 접선 방정식: (x_1 - a)(x - a) + (y_1 - b)(y - b) = r^2
+                dx, dy = tan_cx - a_circ, tan_cy - b_circ
+                if abs(dy) < 1e-6: # 수직 접선
+                    ax.axvline(tan_cx, color='black', linewidth=1.0, zorder=4)
+                else:
+                    tan_line_y = b_circ + (r_circ**2 - dx*(x_default - a_circ)) / dy
+                    ax.plot(x_default, tan_line_y, 'black', linewidth=1.0, zorder=4)
 
-            ax.plot(x_L, y_L, 'black', linewidth=1.5, zorder=5)
-            ax.plot(x_R, y_R, 'black', linewidth=1.5, zorder=5)
-            val_L, val_R = f_L(boundary), f_R(boundary)
+    elif category == "기하: 이차곡선 (포물선, 타원, 쌍곡선)":
+        conic_type = st.radio("이차곡선 종류", ["포물선 (위/아래)", "포물선 (왼쪽/오른쪽)", "타원", "쌍곡선 (좌/우)", "쌍곡선 (상/하)"], horizontal=True)
+        
+        if "포물선" in conic_type:
+            c1, c2, c3 = st.columns(3)
+            with c1: p_val = st.number_input("초점 상수 (p)", value=1.0)
+            with c2: h = st.number_input("꼭짓점 x (h)", value=0.0)
+            with c3: k = st.number_input("꼭짓점 y (k)", value=0.0)
             
-            if inc_L: ax.plot(boundary, val_L, 'ko', markersize=5, zorder=10)
-            else: ax.plot(boundary, val_L, 'ko', markerfacecolor='white', markersize=5, markeredgewidth=1.2, zorder=10)
-            if inc_R: ax.plot(boundary, val_R, 'ko', markersize=5, zorder=10)
-            else: ax.plot(boundary, val_R, 'ko', markerfacecolor='white', markersize=5, markeredgewidth=1.2, zorder=10)
-        except: pass
+            t = np.linspace(-15, 15, 2000)
+            if "위/아래" in conic_type:
+                st.latex(r"4p(y-k) = (x-h)^2")
+                ax.plot(t + h, (t**2)/(4*p_val) + k, 'black', linewidth=1.5, zorder=5)
+            else:
+                st.latex(r"4p(x-h) = (y-k)^2")
+                ax.plot((t**2)/(4*p_val) + h, t + k, 'black', linewidth=1.5, zorder=5)
+                
+        elif conic_type == "타원":
+            st.latex(r"\frac{(x-h)^2}{a^2} + \frac{(y-k)^2}{b^2} = 1")
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: a_el = st.number_input("가로축 반경 (a)", value=3.0, min_value=0.1)
+            with c2: b_el = st.number_input("세로축 반경 (b)", value=2.0, min_value=0.1)
+            with c3: h = st.number_input("중심 x (h)", value=0.0)
+            with c4: k = st.number_input("중심 y (k)", value=0.0)
+            
+            theta = np.linspace(0, 2*np.pi, 1000)
+            ax.plot(h + a_el*np.cos(theta), k + b_el*np.sin(theta), 'black', linewidth=1.5, zorder=5)
+            
+        elif "쌍곡선" in conic_type:
+            if "좌/우" in conic_type: st.latex(r"\frac{(x-h)^2}{a^2} - \frac{(y-k)^2}{b^2} = 1")
+            else: st.latex(r"\frac{(x-h)^2}{a^2} - \frac{(y-k)^2}{b^2} = -1")
+            
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: a_hyp = st.number_input("가로 관련 (a)", value=2.0, min_value=0.1)
+            with c2: b_hyp = st.number_input("세로 관련 (b)", value=2.0, min_value=0.1)
+            with c3: h = st.number_input("중심 x (h)", value=0.0)
+            with c4: k = st.number_input("중심 y (k)", value=0.0)
+            
+            t = np.linspace(-2.5, 2.5, 1000)
+            if "좌/우" in conic_type:
+                # sec(t), tan(t) 매개변수 사용 방식을 피하기 위해 cosh, sinh 사용
+                x_right = h + a_hyp * np.cosh(t)
+                x_left = h - a_hyp * np.cosh(t)
+                y_hyp = k + b_hyp * np.sinh(t)
+                ax.plot(x_right, y_hyp, 'black', linewidth=1.5, zorder=5)
+                ax.plot(x_left, y_hyp, 'black', linewidth=1.5, zorder=5)
+            else:
+                x_hyp = h + a_hyp * np.sinh(t)
+                y_up = k + b_hyp * np.cosh(t)
+                y_down = k - b_hyp * np.cosh(t)
+                ax.plot(x_hyp, y_up, 'black', linewidth=1.5, zorder=5)
+                ax.plot(x_hyp, y_down, 'black', linewidth=1.5, zorder=5)
+            
+            # 점근선 (선택)
+            if st.checkbox("점근선 표시 (선택)", value=False):
+                ax.plot(x_default, (b_hyp/a_hyp)*(x_default - h) + k, 'k--', linewidth=1.0, alpha=0.5)
+                ax.plot(x_default, -(b_hyp/a_hyp)*(x_default - h) + k, 'k--', linewidth=1.0, alpha=0.5)
 
-    elif category == "정적분함수 (넓이 색칠)":
-        expr_str = st.text_input("함수식 입력", value="-x**2 + 4")
-        try:
-            f = sp.lambdify(x_sym, parse_func(expr_str), ['numpy', {'e': np.e}])
-            y = f(x_default)
-            if np.isscalar(y): y = np.full_like(x_default, y)
-            ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
-            c1, c2 = st.columns(2)
-            with c1: a_val = st.number_input("적분 시작 (a)", value=-1.0)
-            with c2: b_val = st.number_input("적분 끝 (b)", value=2.0)
-            x_fill = np.linspace(a_val, b_val, 500)
-            y_fill = f(x_fill)
-            if np.isscalar(y_fill): y_fill = np.full_like(x_fill, y_fill)
-            ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
-        except: pass
-
-    # --- 리스트형 점 및 위치/숨김 제어 UI ---
+    # --- 기존 리스트형 점 및 위치/숨김 제어 UI 유지 ---
     st.markdown("---")
     c_pts, c_lines = st.columns([1.5, 1])
     
@@ -228,12 +291,11 @@ with col_left:
         st.text_input("예: 1, 2 또는 1, 2, A", key="new_pt", on_change=add_pt_callback)
         
         for i, pt_dict in enumerate(st.session_state.pts_list):
-            # 체크박스를 2개로 늘리기 위해 비율 조정
             col1, col2, col3, col4, col5 = st.columns([2.5, 1.8, 1.8, 2.5, 1.2])
             col1.write(f"`{pt_dict['raw']}`")
-            pt_dict['hide_coord'] = col2.checkbox("숫자 숨김", value=pt_dict.get('hide_coord', False), key=f"hide_c_{i}")
-            pt_dict['hide_line'] = col3.checkbox("점선 숨김", value=pt_dict.get('hide_line', False), key=f"hide_l_{i}")
-            pt_dict['label_pos'] = col4.selectbox("문자 위치", ["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"], 
+            pt_dict['hide_coord'] = col2.checkbox("숫자숨김", value=pt_dict.get('hide_coord', False), key=f"hide_c_{i}")
+            pt_dict['hide_line'] = col3.checkbox("점선숨김", value=pt_dict.get('hide_line', False), key=f"hide_l_{i}")
+            pt_dict['label_pos'] = col4.selectbox("위치", ["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"], 
                                                 index=["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"].index(pt_dict.get('label_pos', '오른쪽 위')), 
                                                 key=f"pos_{i}", label_visibility="collapsed")
             if col5.button("삭제", key=f"del_pt_{i}"):
@@ -254,20 +316,17 @@ with col_left:
                 py = float(parts[1])
                 label = parts[2] if len(parts) > 2 else ""
 
-                # 💡 점선 그리기 (점선 숨김을 체크하지 않았을 때만)
                 if not pt_dict.get('hide_line', False):
                     ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
                     ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
                 
                 ax.plot(px, py, 'ko', markersize=5, zorder=10)
                 
-                # 점 이름 표시 (올곧은 로만체)
                 if label:
                     l_off_x, l_off_y, l_ha, l_va = pos_map[pt_dict.get('label_pos', '오른쪽 위')]
                     ax.annotate(rf'$\mathrm{{{label}}}$', xy=(px, py), xytext=(l_off_x, l_off_y), textcoords='offset points', 
                                 ha=l_ha, va=l_va, fontsize=13, fontfamily='stix', bbox=bbox_white, zorder=25)
 
-                # 좌표축 숫자 그리기 (숫자 숨김을 체크하지 않았을 때만)
                 if not pt_dict.get('hide_coord', False):
                     va_x = 'top' if py >= 0 else 'bottom'
                     y_off_x = -7 if py >= 0 else 7
