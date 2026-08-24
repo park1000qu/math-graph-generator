@@ -46,7 +46,6 @@ def parse_expr(expr_str):
 def parse_func(expr_str):
     return sp.sympify(expr_str, locals={"e": sp.E})
 
-# 글씨 뒤로 선이 비치지 않게 하는 꽉 찬 흰색 배경
 bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 
 if 'pts_list' not in st.session_state: st.session_state.pts_list = []
@@ -59,7 +58,6 @@ with col_left:
     st.subheader("그래프 세부 설정")
     fig, ax = plt.subplots(figsize=(6, 6))
     
-    # x축은 무조건 원점(0)을 포함하도록 확장
     plot_x_min = min(0, x_min)
     plot_x_max = max(0, x_max)
     x_default = np.linspace(plot_x_min, plot_x_max, 3000)
@@ -186,39 +184,58 @@ with col_left:
             ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
         except: pass
 
-    # --- 리스트형 점/선 추가 UI ---
+    # --- 리스트형 점/선 추가 및 점선 연결 복구 ---
     st.markdown("---")
-    st.write("📍 **점 및 축 보조선 추가 (엔터키 입력)**")
-    st.text_input("점 좌표 입력 (예: 1, 2)", key="new_pt", on_change=add_pt_callback)
+    c_pts, c_lines = st.columns(2)
     
-    for i, pt in enumerate(st.session_state.pts_list):
-        col1, col2 = st.columns([5, 1])
-        col1.write(f"추가됨: `{pt}`")
-        if col2.button("삭제", key=f"del_pt_{i}"):
-            st.session_state.pts_list.pop(i)
-            st.rerun()
+    with c_pts:
+        st.write("📍 **점 및 축 보조선 추가 (엔터키)**")
+        st.text_input("점 좌표 (예: 1, 2)", key="new_pt", on_change=add_pt_callback)
+        
+        for i, pt in enumerate(st.session_state.pts_list):
+            col1, col2 = st.columns([5, 1])
+            col1.write(f"`{pt}`")
+            if col2.button("삭제", key=f"del_pt_{i}"):
+                st.session_state.pts_list.pop(i)
+                st.rerun()
 
-    for pt in st.session_state.pts_list:
-        try:
-            px, py = map(float, pt.split(','))
-            ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
-            ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
-            ax.plot(px, py, 'ko', markersize=5, zorder=10)
-            
-            va_x = 'top' if py >= 0 else 'bottom'
-            y_off_x = -7 if py >= 0 else 7
-            ha_y = 'right' if px >= 0 else 'left'
-            x_off_y = -7 if px >= 0 else 7
+        for pt in st.session_state.pts_list:
+            try:
+                px, py = map(float, pt.split(','))
+                ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
+                ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
+                ax.plot(px, py, 'ko', markersize=5, zorder=10)
+                
+                va_x = 'top' if py >= 0 else 'bottom'
+                y_off_x = -7 if py >= 0 else 7
+                ha_y = 'right' if px >= 0 else 'left'
+                x_off_y = -7 if px >= 0 else 7
 
-            if px != 0:
-                ax.annotate(f"{px:g}", xy=(px, 0), xytext=(0, y_off_x), textcoords='offset points', 
-                            ha='center', va=va_x, fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
-            if py != 0:
-                ax.annotate(f"{py:g}", xy=(0, py), xytext=(x_off_y, 0), textcoords='offset points', 
-                            ha=ha_y, va='center', fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
-        except: pass
+                if px != 0:
+                    ax.annotate(f"{px:g}", xy=(px, 0), xytext=(0, y_off_x), textcoords='offset points', 
+                                ha='center', va=va_x, fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
+                if py != 0:
+                    ax.annotate(f"{py:g}", xy=(0, py), xytext=(x_off_y, 0), textcoords='offset points', 
+                                ha=ha_y, va='center', fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
+            except: pass
 
-    # --- 💡 지능형 y축 자동 스케일링 로직 ---
+    with c_lines:
+        st.write("🔗 **두 점 사이 점선 연결**")
+        st.caption("예: 1, 2, 3, 4 (x1, y1 에서 x2, y2)")
+        segments_input = st.text_area("좌표 입력", height=100)
+        if segments_input:
+            for line in segments_input.strip().split('\n'):
+                if line:
+                    try:
+                        x1, y1, x2, y2 = map(float, line.split(','))
+                        ax.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5, zorder=4)
+                    except: pass
+
+    # --- 💡 원점 O 위치 수동 제어 추가 ---
+    st.markdown("---")
+    o_pos = st.radio("원점(O) 기호 위치 선택", ["기본 (왼쪽 아래)", "오른쪽 아래", "왼쪽 위", "오른쪽 위", "숨기기"], horizontal=True)
+
+    # --- 자동 스케일링 로직 ---
     if auto_y:
         min_y, max_y = 0, 0
         for line in ax.get_lines():
@@ -233,7 +250,6 @@ with col_left:
         final_y_min = min(0, min_y - y_pad)
         final_y_max = max(0, max_y + y_pad)
         
-        # 무한대 발산 제어 (유리함수/탄젠트 등)
         if final_y_max - final_y_min > 100:
             final_y_min = max(-30, final_y_min)
             final_y_max = min(30, final_y_max)
@@ -241,7 +257,6 @@ with col_left:
         final_y_min = min(0, y_min)
         final_y_max = max(0, y_max)
 
-    # --- 축 디자인 적용 ---
     ax.set_xlim(plot_x_min, plot_x_max)
     ax.set_ylim(final_y_min, final_y_max)
     
@@ -253,15 +268,20 @@ with col_left:
     ax.axhline(0, color='black', linewidth=1.2, zorder=2)
     ax.axvline(0, color='black', linewidth=1.2, zorder=2)
 
-    # 축 끝 화살표 및 기호
     ax.plot(plot_x_max, 0, ">k", clip_on=False, zorder=10)
     ax.plot(0, final_y_max, "^k", clip_on=False, zorder=10)
     ax.text(plot_x_max + (plot_x_max - plot_x_min)*0.03, 0, r'$x$', ha='left', va='center', fontsize=14, fontfamily='stix', zorder=20)
     ax.text(0, final_y_max + (final_y_max - final_y_min)*0.03, r'$y$', ha='center', va='bottom', fontsize=14, fontfamily='stix', zorder=20)
     
-    # 원점 O 표시 (겹침 완벽 차단용 zorder=20 및 bbox 적용)
-    ax.annotate(r'$O$', xy=(0, 0), xytext=(-8, -8), textcoords='offset points', 
-                ha='right', va='top', fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
+    # 설정한 원점 위치 반영
+    if o_pos != "숨기기":
+        if o_pos == "기본 (왼쪽 아래)": o_x, o_y, o_ha, o_va = -8, -8, 'right', 'top'
+        elif o_pos == "오른쪽 아래": o_x, o_y, o_ha, o_va = 8, -8, 'left', 'top'
+        elif o_pos == "왼쪽 위": o_x, o_y, o_ha, o_va = -8, 8, 'right', 'bottom'
+        elif o_pos == "오른쪽 위": o_x, o_y, o_ha, o_va = 8, 8, 'left', 'bottom'
+        
+        ax.annotate(r'$O$', xy=(0, 0), xytext=(o_x, o_y), textcoords='offset points', 
+                    ha=o_ha, va=o_va, fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
 
     ax.set_xticks([])
     ax.set_yticks([])
