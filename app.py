@@ -49,12 +49,24 @@ def parse_func(expr_str):
 bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 
 # --- 세션 상태 초기화 (엔터키 리스트용) ---
-if 'pts_list' not in st.session_state: st.session_state.pts_list = []
-if 'lines_list' not in st.session_state: st.session_state.lines_list = []
+if 'pts_list' not in st.session_state: 
+    st.session_state.pts_list = []
+else:
+    # 이전 버전 호환성 유지 (문자열을 딕셔너리로 변환)
+    for i in range(len(st.session_state.pts_list)):
+        if isinstance(st.session_state.pts_list[i], str):
+            st.session_state.pts_list[i] = {"raw": st.session_state.pts_list[i], "hide_coord": False, "label_pos": "오른쪽 위"}
+
+if 'lines_list' not in st.session_state: 
+    st.session_state.lines_list = []
 
 def add_pt_callback():
     if st.session_state.new_pt:
-        st.session_state.pts_list.append(st.session_state.new_pt)
+        st.session_state.pts_list.append({
+            "raw": st.session_state.new_pt,
+            "hide_coord": False,
+            "label_pos": "오른쪽 위"
+        })
         st.session_state.new_pt = ""
 
 def add_line_callback():
@@ -203,24 +215,37 @@ with col_left:
             ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
         except: pass
 
-    # --- 리스트형 점 및 점선 연결 추가 ---
+    # --- 리스트형 점 및 위치/숨김 제어 UI ---
     st.markdown("---")
-    c_pts, c_lines = st.columns(2)
+    c_pts, c_lines = st.columns([1.5, 1])
     
     with c_pts:
-        st.write("📍 **점 추가 및 이름 표시 (엔터키)**")
+        st.write("📍 **점 추가 및 세부 제어 (엔터키)**")
         st.text_input("예: 1, 2 또는 1, 2, A", key="new_pt", on_change=add_pt_callback)
         
-        for i, pt in enumerate(st.session_state.pts_list):
-            col1, col2 = st.columns([5, 1])
-            col1.write(f"`{pt}`")
-            if col2.button("삭제", key=f"del_pt_{i}"):
+        # 추가된 점 리스트 및 제어 메뉴
+        for i, pt_dict in enumerate(st.session_state.pts_list):
+            col1, col2, col3, col4 = st.columns([3, 2, 3, 1])
+            col1.write(f"`{pt_dict['raw']}`")
+            pt_dict['hide_coord'] = col2.checkbox("숫자 숨김", value=pt_dict['hide_coord'], key=f"hide_{i}")
+            pt_dict['label_pos'] = col3.selectbox("문자 위치", ["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"], 
+                                                index=["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"].index(pt_dict['label_pos']), 
+                                                key=f"pos_{i}", label_visibility="collapsed")
+            if col4.button("삭제", key=f"del_pt_{i}"):
                 st.session_state.pts_list.pop(i)
                 st.rerun()
 
-        for pt in st.session_state.pts_list:
+        # 점과 수선의 발, 문자 그리기
+        pos_map = {
+            "오른쪽 위": (6, 6, 'left', 'bottom'),
+            "왼쪽 위": (-6, 6, 'right', 'bottom'),
+            "오른쪽 아래": (6, -6, 'left', 'top'),
+            "왼쪽 아래": (-6, -6, 'right', 'top')
+        }
+
+        for pt_dict in st.session_state.pts_list:
             try:
-                parts = [p.strip() for p in pt.split(',')]
+                parts = [p.strip() for p in pt_dict['raw'].split(',')]
                 px = float(parts[0])
                 py = float(parts[1])
                 label = parts[2] if len(parts) > 2 else ""
@@ -229,30 +254,33 @@ with col_left:
                 ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
                 ax.plot(px, py, 'ko', markersize=5, zorder=10)
                 
-                # 점 이름 표시 (올곧은 로만/정자체)
+                # 💡 점 이름 표시 (올곧은 로만체 수식 폰트 적용)
                 if label:
-                    ax.annotate(label, xy=(px, py), xytext=(6, 6), textcoords='offset points', 
-                                ha='left', va='bottom', fontsize=12, fontfamily='Hancom Batang', fontstyle='normal', bbox=bbox_white, zorder=25)
+                    l_off_x, l_off_y, l_ha, l_va = pos_map[pt_dict['label_pos']]
+                    ax.annotate(rf'$\mathrm{{{label}}}$', xy=(px, py), xytext=(l_off_x, l_off_y), textcoords='offset points', 
+                                ha=l_ha, va=l_va, fontsize=13, fontfamily='stix', bbox=bbox_white, zorder=25)
 
-                va_x = 'top' if py >= 0 else 'bottom'
-                y_off_x = -7 if py >= 0 else 7
-                ha_y = 'right' if px >= 0 else 'left'
-                x_off_y = -7 if px >= 0 else 7
+                # 💡 좌표축 숫자 그리기 (숫자 숨김 체크 안 했을 때만)
+                if not pt_dict['hide_coord']:
+                    va_x = 'top' if py >= 0 else 'bottom'
+                    y_off_x = -7 if py >= 0 else 7
+                    ha_y = 'right' if px >= 0 else 'left'
+                    x_off_y = -7 if px >= 0 else 7
 
-                if px != 0:
-                    ax.annotate(f"{px:g}", xy=(px, 0), xytext=(0, y_off_x), textcoords='offset points', 
-                                ha='center', va=va_x, fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
-                if py != 0:
-                    ax.annotate(f"{py:g}", xy=(0, py), xytext=(x_off_y, 0), textcoords='offset points', 
-                                ha=ha_y, va='center', fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
+                    if px != 0:
+                        ax.annotate(f"{px:g}", xy=(px, 0), xytext=(0, y_off_x), textcoords='offset points', 
+                                    ha='center', va=va_x, fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
+                    if py != 0:
+                        ax.annotate(f"{py:g}", xy=(0, py), xytext=(x_off_y, 0), textcoords='offset points', 
+                                    ha=ha_y, va='center', fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
             except: pass
 
     with c_lines:
-        st.write("🔗 **두 점 사이 점선 연결 (엔터키)**")
+        st.write("🔗 **두 점 점선 연결**")
         st.text_input("예: 1, 2, 3, 4", key="new_line", on_change=add_line_callback)
         
         for i, line in enumerate(st.session_state.lines_list):
-            col1, col2 = st.columns([5, 1])
+            col1, col2 = st.columns([3, 1])
             col1.write(f"`{line}`")
             if col2.button("삭제", key=f"del_line_{i}"):
                 st.session_state.lines_list.pop(i)
@@ -302,7 +330,6 @@ with col_left:
     ax.plot(plot_x_max, 0, ">k", clip_on=False, zorder=10)
     ax.plot(0, final_y_max, "^k", clip_on=False, zorder=10)
     
-    # x, y 좌표축 기호는 이탤릭체(기울임) 적용 (r'$x$', r'$y$')
     ax.text(plot_x_max + (plot_x_max - plot_x_min)*0.03, 0, r'$x$', ha='left', va='center', fontsize=14, fontfamily='stix', zorder=20)
     ax.text(0, final_y_max + (final_y_max - final_y_min)*0.03, r'$y$', ha='center', va='bottom', fontsize=14, fontfamily='stix', zorder=20)
     
@@ -312,7 +339,6 @@ with col_left:
         elif o_pos == "왼쪽 위": o_x, o_y, o_ha, o_va = -8, 8, 'right', 'bottom'
         elif o_pos == "오른쪽 위": o_x, o_y, o_ha, o_va = 8, 8, 'left', 'bottom'
         
-        # 원점 O 기호는 로만(정자체) 적용 (r'$\mathrm{O}$')
         ax.annotate(r'$\mathrm{O}$', xy=(0, 0), xytext=(o_x, o_y), textcoords='offset points', 
                     ha=o_ha, va=o_va, fontsize=13, fontfamily='stix', bbox=bbox_white, zorder=20)
 
