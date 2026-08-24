@@ -364,6 +364,7 @@ with col_left:
 
     with c_tans:
         st.write("📈 **자동 접선 긋기 (이차/삼사차/원)**")
+        show_tan_pt = st.checkbox("접점(●) 기호 표시", value=True)
         st.caption("함수: `x좌표`, 원: `x좌표, 상` 또는 `x좌표, 하`")
         st.text_input("예: 1/3 또는 sqrt2, 상", key="new_tan", on_change=add_tan_callback)
         for i, tan_val in enumerate(st.session_state.tan_list):
@@ -381,7 +382,9 @@ with col_left:
                     if abs(tx - a_c) <= r_c + 1e-6:
                         dy_offset = np.sqrt(max(0, r_c**2 - (tx - a_c)**2))
                         ty = b_c - dy_offset if (len(parts) > 1 and "하" in parts[1]) else b_c + dy_offset
-                        ax.plot(tx, ty, 'ko', markersize=5, zorder=15)
+                        
+                        if show_tan_pt:
+                            ax.plot(tx, ty, 'ko', markersize=5, zorder=15)
                         
                         dx, dy = tx - a_c, ty - b_c
                         if abs(dy) < 1e-6: 
@@ -395,7 +398,9 @@ with col_left:
                     y_val = float(current_f(tx))
                     tan_y = slope * (x_default - tx) + y_val
                     ax.plot(x_default, tan_y, 'black', linewidth=1.0, zorder=4)
-                    ax.plot(tx, y_val, 'ko', markersize=5, zorder=15)
+                    
+                    if show_tan_pt:
+                        ax.plot(tx, y_val, 'ko', markersize=5, zorder=15)
             except: pass
 
     # --- 마무리 렌더링 설정 ---
