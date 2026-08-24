@@ -52,10 +52,13 @@ bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 if 'pts_list' not in st.session_state: 
     st.session_state.pts_list = []
 else:
-    # 이전 버전 호환성 유지 (문자열을 딕셔너리로 변환)
+    # 이전 버전 호환성 유지 (딕셔너리 구조 업데이트)
     for i in range(len(st.session_state.pts_list)):
         if isinstance(st.session_state.pts_list[i], str):
-            st.session_state.pts_list[i] = {"raw": st.session_state.pts_list[i], "hide_coord": False, "label_pos": "오른쪽 위"}
+            st.session_state.pts_list[i] = {"raw": st.session_state.pts_list[i], "hide_coord": False, "hide_line": False, "label_pos": "오른쪽 위"}
+        else:
+            if "hide_line" not in st.session_state.pts_list[i]:
+                st.session_state.pts_list[i]["hide_line"] = False
 
 if 'lines_list' not in st.session_state: 
     st.session_state.lines_list = []
@@ -65,6 +68,7 @@ def add_pt_callback():
         st.session_state.pts_list.append({
             "raw": st.session_state.new_pt,
             "hide_coord": False,
+            "hide_line": False,
             "label_pos": "오른쪽 위"
         })
         st.session_state.new_pt = ""
@@ -223,19 +227,19 @@ with col_left:
         st.write("📍 **점 추가 및 세부 제어 (엔터키)**")
         st.text_input("예: 1, 2 또는 1, 2, A", key="new_pt", on_change=add_pt_callback)
         
-        # 추가된 점 리스트 및 제어 메뉴
         for i, pt_dict in enumerate(st.session_state.pts_list):
-            col1, col2, col3, col4 = st.columns([3, 2, 3, 1])
+            # 체크박스를 2개로 늘리기 위해 비율 조정
+            col1, col2, col3, col4, col5 = st.columns([2.5, 1.8, 1.8, 2.5, 1.2])
             col1.write(f"`{pt_dict['raw']}`")
-            pt_dict['hide_coord'] = col2.checkbox("숫자 숨김", value=pt_dict['hide_coord'], key=f"hide_{i}")
-            pt_dict['label_pos'] = col3.selectbox("문자 위치", ["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"], 
-                                                index=["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"].index(pt_dict['label_pos']), 
+            pt_dict['hide_coord'] = col2.checkbox("숫자 숨김", value=pt_dict.get('hide_coord', False), key=f"hide_c_{i}")
+            pt_dict['hide_line'] = col3.checkbox("점선 숨김", value=pt_dict.get('hide_line', False), key=f"hide_l_{i}")
+            pt_dict['label_pos'] = col4.selectbox("문자 위치", ["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"], 
+                                                index=["오른쪽 위", "왼쪽 위", "오른쪽 아래", "왼쪽 아래"].index(pt_dict.get('label_pos', '오른쪽 위')), 
                                                 key=f"pos_{i}", label_visibility="collapsed")
-            if col4.button("삭제", key=f"del_pt_{i}"):
+            if col5.button("삭제", key=f"del_pt_{i}"):
                 st.session_state.pts_list.pop(i)
                 st.rerun()
 
-        # 점과 수선의 발, 문자 그리기
         pos_map = {
             "오른쪽 위": (6, 6, 'left', 'bottom'),
             "왼쪽 위": (-6, 6, 'right', 'bottom'),
@@ -250,18 +254,21 @@ with col_left:
                 py = float(parts[1])
                 label = parts[2] if len(parts) > 2 else ""
 
-                ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
-                ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
+                # 💡 점선 그리기 (점선 숨김을 체크하지 않았을 때만)
+                if not pt_dict.get('hide_line', False):
+                    ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
+                    ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
+                
                 ax.plot(px, py, 'ko', markersize=5, zorder=10)
                 
-                # 💡 점 이름 표시 (올곧은 로만체 수식 폰트 적용)
+                # 점 이름 표시 (올곧은 로만체)
                 if label:
-                    l_off_x, l_off_y, l_ha, l_va = pos_map[pt_dict['label_pos']]
+                    l_off_x, l_off_y, l_ha, l_va = pos_map[pt_dict.get('label_pos', '오른쪽 위')]
                     ax.annotate(rf'$\mathrm{{{label}}}$', xy=(px, py), xytext=(l_off_x, l_off_y), textcoords='offset points', 
                                 ha=l_ha, va=l_va, fontsize=13, fontfamily='stix', bbox=bbox_white, zorder=25)
 
-                # 💡 좌표축 숫자 그리기 (숫자 숨김 체크 안 했을 때만)
-                if not pt_dict['hide_coord']:
+                # 좌표축 숫자 그리기 (숫자 숨김을 체크하지 않았을 때만)
+                if not pt_dict.get('hide_coord', False):
                     va_x = 'top' if py >= 0 else 'bottom'
                     y_off_x = -7 if py >= 0 else 7
                     ha_y = 'right' if px >= 0 else 'left'
