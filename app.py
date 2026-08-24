@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sympy as sp
 import io
+import re
 from sympy.parsing.sympy_parser import parse_expr as sympy_parse_expr
 from sympy.parsing.sympy_parser import standard_transformations, implicit_multiplication_application
 
@@ -14,6 +15,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="수학 모의고사 그래프 생성기", page_icon="📐", layout="wide")
 st.title("📐 고등 수학 모의고사 흑백 그래프 생성기")
+st.info("💡 **모든 숫자 입력칸**에 `1/3`, `sqrt2`, `2sqrt3`, `pi/2` 등 수식을 그대로 입력하실 수 있습니다!")
 
 categories = [
     "일차함수", "이차함수", "다항함수: 3차/4차함수", "유리함수", "무리함수", 
@@ -43,24 +45,35 @@ col_left, col_right = st.columns([1.2, 1])
 x_sym = sp.Symbol('x')
 y_sym = sp.Symbol('y')
 
-# 💡 지능형 수식 파서 (3x -> 3*x 자동 변환 지원)
+# 💡 지능형 수식 파서
 transformations = standard_transformations + (implicit_multiplication_application,)
+
+def robust_parse(val_str):
+    if not isinstance(val_str, str): return float(val_str)
+    s = str(val_str).strip()
+    if not s: return 0.0
+    s = s.replace('^', '**')
+    s = re.sub(r'sqrt\s*(\d+(?:\.\d+)?)', r'sqrt(\1)', s)
+    
+    env = {"pi": sp.pi, "e": sp.E, "sqrt": sp.sqrt, "sin": sp.sin, "cos": sp.cos, "tan": sp.tan, "log": sp.log, "ln": sp.log}
+    try:
+        expr = sympy_parse_expr(s, local_dict=env, transformations=transformations)
+        return float(expr.evalf())
+    except:
+        return 0.0
 
 def parse_func(expr_str):
     expr_str = str(expr_str).replace('^', '**')
-    return sympy_parse_expr(expr_str, local_dict={"e": sp.E, "pi": sp.pi, "x": x_sym}, transformations=transformations)
+    expr_str = re.sub(r'sqrt\s*(\d+(?:\.\d+)?)', r'sqrt(\1)', expr_str)
+    env = {"e": sp.E, "pi": sp.pi, "x": x_sym, "sqrt": sp.sqrt, "sin": sp.sin, "cos": sp.cos, "tan": sp.tan}
+    return sympy_parse_expr(expr_str, local_dict=env, transformations=transformations)
 
-def parse_float_expr(expr_str):
-    if not isinstance(expr_str, str): return float(expr_str)
-    try:
-        s = str(expr_str).replace('^', '**')
-        sym_expr = sympy_parse_expr(s, local_dict={"pi": sp.pi, "e": sp.E}, transformations=transformations)
-        return float(sym_expr.evalf())
-    except: return 0.0
+def math_input(label, default_val, key=None):
+    return robust_parse(st.text_input(label, value=str(default_val), key=key))
 
 bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 
-# --- 세션 상태 초기화 (점, 선, 접선 리스트) ---
+# --- 세션 상태 초기화 ---
 if 'pts_list' not in st.session_state: st.session_state.pts_list = []
 else:
     for i in range(len(st.session_state.pts_list)):
@@ -98,54 +111,48 @@ with col_left:
     if category == "일차함수":
         st.latex(r"\mathbf{[기본형]} \quad y = ax + b")
         c1, c2 = st.columns(2)
-        with c1: a = st.number_input("기울기 (a)", value=1.0)
-        with c2: b = st.number_input("y절편 (b)", value=0.0)
+        with c1: a = math_input("기울기 (a)", "1")
+        with c2: b = math_input("y절편 (b)", "0")
         expr_sym = a * x_sym + b
         st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
-        
         ax.plot(x_default, a * x_default + b, 'black', linewidth=1.5, zorder=5)
 
     elif category == "이차함수":
         st.latex(r"\mathbf{[기본형]} \quad y = a(x - p)^2 + q")
         c1, c2, c3 = st.columns(3)
-        with c1: a = st.number_input("최고차항 계수 (a)", value=1.0)
-        with c2: p = st.number_input("꼭짓점 x (p)", value=0.0)
-        with c3: q = st.number_input("꼭짓점 y (q)", value=0.0)
+        with c1: a = math_input("최고차항 계수 (a)", "1")
+        with c2: p = math_input("꼭짓점 x (p)", "0")
+        with c3: q = math_input("꼭짓점 y (q)", "0")
         
         expr_sym = a * (x_sym - p)**2 + q
         st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
-        
         current_f = sp.lambdify(x_sym, expr_sym, ['numpy'])
         current_df = sp.lambdify(x_sym, sp.diff(expr_sym, x_sym), ['numpy'])
         ax.plot(x_default, current_f(x_default), 'black', linewidth=1.5, zorder=5)
 
     elif category == "다항함수: 3차/4차함수":
         st.latex(r"\mathbf{[기본형]} \quad y = f(x)")
-        st.info("💡 `3x^2 - 2x + 1` 처럼 치셔도 완벽하게 인식합니다!")
         expr_str = st.text_input("함수식 입력", value="x^3 - 3x")
         try:
             expr_sym = parse_func(expr_str)
             st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
-            
             current_f = sp.lambdify(x_sym, expr_sym, ['numpy', {'e': np.e}])
             current_df = sp.lambdify(x_sym, sp.diff(expr_sym, x_sym), ['numpy', {'e': np.e}])
-            
             y = current_f(x_default)
             if np.isscalar(y): y = np.full_like(x_default, y)
             ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
-        except: st.error("수식을 이해할 수 없습니다. 다시 확인해주세요.")
+        except: st.error("수식을 이해할 수 없습니다. 수식을 확인해주세요.")
 
     elif category == "유리함수":
         st.latex(r"\mathbf{[기본형]} \quad y = \frac{k}{x - p} + q")
         c1, c2, c3 = st.columns(3)
-        with c1: k = st.number_input("분자 (k)", value=1.0)
-        with c2: p = st.number_input("x 점근선 (p)", value=1.0)
-        with c3: q = st.number_input("y 점근선 (q)", value=1.0)
+        with c1: k = math_input("분자 (k)", "1")
+        with c2: p = math_input("x 점근선 (p)", "1")
+        with c3: q = math_input("y 점근선 (q)", "1")
         show_asym = st.checkbox("점근선 표시 (점선)", value=True)
         
         expr_sym = k / (x_sym - p) + q
         st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
-        
         y = k / (x_default - p) + q
         y[np.abs(x_default - p) < 0.05] = np.nan 
         ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
@@ -156,28 +163,24 @@ with col_left:
     elif category == "기하: 원의 방정식":
         st.latex(r"\mathbf{[기본형]} \quad (x - a)^2 + (y - b)^2 = r^2")
         c1, c2, c3 = st.columns(3)
-        with c1: a_circ = st.number_input("중심 x (a)", value=0.0)
-        with c2: b_circ = st.number_input("중심 y (b)", value=0.0)
-        with c3: r_circ = st.number_input("반지름 (r)", value=3.0, min_value=0.1)
+        with c1: a_circ = math_input("중심 x (a)", "0")
+        with c2: b_circ = math_input("중심 y (b)", "0")
+        with c3: r_circ = math_input("반지름 (r)", "3")
         
         lhs = (x_sym - a_circ)**2 + (y_sym - b_circ)**2
         st.latex(rf"\mathbf{{[현재 식]}} \quad {sp.latex(lhs)} = {r_circ**2:g}")
-        
         current_circle = (a_circ, b_circ, r_circ)
         theta = np.linspace(0, 2*np.pi, 1000)
         ax.plot(a_circ + r_circ * np.cos(theta), b_circ + r_circ * np.sin(theta), 'black', linewidth=1.5, zorder=5)
         ax.plot(a_circ, b_circ, 'ko', markersize=3, zorder=5)
 
-    # (그 외 다른 함수들 생략 없이 렌더링 유지)
     elif category == "무리함수":
         st.latex(r"\mathbf{[기본형]} \quad y = a\sqrt{b(x - p)} + q")
         c1, c2 = st.columns(2)
-        with c1: a = st.number_input("바깥 계수 (a)", value=1.0); p = st.number_input("시작점 x (p)", value=0.0)
-        with c2: b = st.number_input("안쪽 계수 (b)", value=1.0); q = st.number_input("시작점 y (q)", value=0.0)
-        
+        with c1: a = math_input("바깥 계수 (a)", "1"); p = math_input("시작점 x (p)", "0")
+        with c2: b = math_input("안쪽 계수 (b)", "1"); q = math_input("시작점 y (q)", "0")
         expr_sym = a * sp.sqrt(b * (x_sym - p)) + q
         st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
-        
         x_root = np.linspace(p, plot_x_max + 2, 2000) if b > 0 else np.linspace(plot_x_min - 2, p, 2000)
         y_root = a * np.sqrt(b * (x_root - p)) + q
         ax.plot(x_root, y_root, 'black', linewidth=1.5, zorder=5)
@@ -186,11 +189,10 @@ with col_left:
     elif category == "지수함수":
         st.latex(r"\mathbf{[기본형]} \quad y = a^{x - p} + q")
         base_choice = st.radio("밑 (a)", ["e (자연상수)", "2", "10", "직접 입력"], horizontal=True)
-        a = np.e if base_choice == "e (자연상수)" else (float(base_choice) if base_choice != "직접 입력" else st.number_input("직접 입력", value=3.0))
+        a = np.e if base_choice == "e (자연상수)" else (float(base_choice) if base_choice != "직접 입력" else math_input("직접 입력", "3"))
         c1, c2 = st.columns(2)
-        with c1: p = st.number_input("x 평행이동 (p)", value=0.0)
-        with c2: q = st.number_input("y 평행이동 (q)", value=0.0)
-        
+        with c1: p = math_input("x 평행이동 (p)", "0")
+        with c2: q = math_input("y 평행이동 (q)", "0")
         expr_sym = a**(x_sym - p) + q
         st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
         ax.plot(x_default, a**(x_default - p) + q, 'black', linewidth=1.5, zorder=5)
@@ -198,27 +200,22 @@ with col_left:
     elif category == "로그함수":
         st.latex(r"\mathbf{[기본형]} \quad y = \log_a(x - p) + q")
         base_choice = st.radio("밑 (a)", ["e (자연상수)", "2", "10", "직접 입력"], horizontal=True)
-        a = np.e if base_choice == "e (자연상수)" else (float(base_choice) if base_choice != "직접 입력" else st.number_input("직접 입력", value=3.0))
+        a = np.e if base_choice == "e (자연상수)" else (float(base_choice) if base_choice != "직접 입력" else math_input("직접 입력", "3"))
         c1, c2 = st.columns(2)
-        with c1: p = st.number_input("x 점근선 (p)", value=0.0)
-        with c2: q = st.number_input("y 평행이동 (q)", value=0.0)
-        
+        with c1: p = math_input("x 점근선 (p)", "0")
+        with c2: q = math_input("y 평행이동 (q)", "0")
         expr_sym = sp.log(x_sym - p, a) + q
         st.latex(r"\mathbf{[현재 식]} \quad y = " + sp.latex(expr_sym))
         x_log = np.linspace(p + 0.0001, plot_x_max + 2, 3000)
         ax.plot(x_log, np.log(x_log - p) / np.log(a) + q, 'black', linewidth=1.5, zorder=5)
 
     elif "삼각함수" in category:
-        st.info("💡 `pi`, `2*pi`, `1/3` 처럼 입력할 수 있습니다.")
         if "sin" in category: st.latex(r"\mathbf{[기본형]} \quad y = a \sin(b(x - p)) + q")
         elif "cos" in category: st.latex(r"\mathbf{[기본형]} \quad y = a \cos(b(x - p)) + q")
         elif "tan" in category: st.latex(r"\mathbf{[기본형]} \quad y = a \tan(b(x - p)) + q")
-        
         c1, c2 = st.columns(2)
-        with c1: a = st.number_input("진폭", value=1.0); p_str = st.text_input("x 평행이동", value="0")
-        with c2: b_str = st.text_input("주기", value="1"); q = st.number_input("y 평행이동", value=0.0)
-        p, b = parse_float_expr(p_str), parse_float_expr(b_str)
-        
+        with c1: a = math_input("진폭", "1"); p = math_input("x 평행이동", "0")
+        with c2: b = math_input("주기", "1"); q = math_input("y 평행이동", "0")
         if "sin" in category: y = a * np.sin(b * (x_default - p)) + q
         elif "cos" in category: y = a * np.cos(b * (x_default - p)) + q
         elif "tan" in category:
@@ -230,9 +227,9 @@ with col_left:
         conic_type = st.radio("이차곡선 종류", ["포물선 (위/아래)", "포물선 (좌/우)", "타원", "쌍곡선"], horizontal=True)
         if "포물선" in conic_type:
             c1, c2, c3 = st.columns(3)
-            with c1: p_val = st.number_input("초점 (p)", value=1.0)
-            with c2: h = st.number_input("x (h)", value=0.0)
-            with c3: k = st.number_input("y (k)", value=0.0)
+            with c1: p_val = math_input("초점 (p)", "1")
+            with c2: h = math_input("x (h)", "0")
+            with c3: k = math_input("y (k)", "0")
             t = np.linspace(-15, 15, 2000)
             if "위/아래" in conic_type: 
                 st.latex(rf"\mathbf{{[현재 식]}} \quad 4({p_val:g})(y - {k:g}) = (x - {h:g})^2")
@@ -242,27 +239,26 @@ with col_left:
                 ax.plot((t**2)/(4*p_val) + h, t + k, 'black', linewidth=1.5, zorder=5)
         elif conic_type == "타원":
             c1, c2, c3, c4 = st.columns(4)
-            with c1: a_el = st.number_input("가로(a)", value=3.0)
-            with c2: b_el = st.number_input("세로(b)", value=2.0)
-            with c3: h = st.number_input("x(h)", value=0.0)
-            with c4: k = st.number_input("y(k)", value=0.0)
+            with c1: a_el = math_input("가로(a)", "3")
+            with c2: b_el = math_input("세로(b)", "2")
+            with c3: h = math_input("x(h)", "0")
+            with c4: k = math_input("y(k)", "0")
             st.latex(rf"\mathbf{{[현재 식]}} \quad \frac{{(x-{h:g})^2}}{{{a_el**2:g}}} + \frac{{(y-{k:g})^2}}{{{b_el**2:g}}} = 1")
             theta = np.linspace(0, 2*np.pi, 1000)
             ax.plot(h + a_el*np.cos(theta), k + b_el*np.sin(theta), 'black', linewidth=1.5, zorder=5)
         elif "쌍곡선" in conic_type:
             c1, c2, c3, c4 = st.columns(4)
-            with c1: a_hyp = st.number_input("가로(a)", value=2.0)
-            with c2: b_hyp = st.number_input("세로(b)", value=2.0)
-            with c3: h = st.number_input("x(h)", value=0.0)
-            with c4: k = st.number_input("y(k)", value=0.0)
+            with c1: a_hyp = math_input("가로(a)", "2")
+            with c2: b_hyp = math_input("세로(b)", "2")
+            with c3: h = math_input("x(h)", "0")
+            with c4: k = math_input("y(k)", "0")
             st.latex(rf"\mathbf{{[현재 식]}} \quad \frac{{(x-{h:g})^2}}{{{a_hyp**2:g}}} - \frac{{(y-{k:g})^2}}{{{b_hyp**2:g}}} = 1")
             t = np.linspace(-2.5, 2.5, 1000)
             ax.plot(h + a_hyp * np.cosh(t), k + b_hyp * np.sinh(t), 'black', linewidth=1.5, zorder=5)
             ax.plot(h - a_hyp * np.cosh(t), k + b_hyp * np.sinh(t), 'black', linewidth=1.5, zorder=5)
 
-    # (구간별, 정적분함수 등은 동일하게 작동하므로 생략 없이 유지)
     elif category == "미적분: 구간별 정의 함수 (불연속/극한)":
-        boundary = parse_float_expr(st.text_input("구간 기준점 (x = c)", value="1.0"))
+        boundary = math_input("구간 기준점 (x = c)", "1")
         c1, c2 = st.columns(2)
         with c1:
             expr_str_L = st.text_input("왼쪽 함수식", value="x**2")
@@ -274,18 +270,15 @@ with col_left:
             inc_R = st.checkbox(f"포함 (≥)", value=True)
             try: f_R = sp.lambdify(x_sym, parse_func(expr_str_R), ['numpy', {'e': np.e}])
             except: pass
-
         try:
             x_L = np.linspace(plot_x_min, boundary, 1500)
             x_R = np.linspace(boundary, plot_x_max, 1500)
             y_L, y_R = f_L(x_L), f_R(x_R)
             if np.isscalar(y_L): y_L = np.full_like(x_L, y_L)
             if np.isscalar(y_R): y_R = np.full_like(x_R, y_R)
-
             ax.plot(x_L, y_L, 'black', linewidth=1.5, zorder=5)
             ax.plot(x_R, y_R, 'black', linewidth=1.5, zorder=5)
             val_L, val_R = f_L(boundary), f_R(boundary)
-            
             if inc_L: ax.plot(boundary, val_L, 'ko', markersize=5, zorder=10)
             else: ax.plot(boundary, val_L, 'ko', markerfacecolor='white', markersize=5, markeredgewidth=1.2, zorder=10)
             if inc_R: ax.plot(boundary, val_R, 'ko', markersize=5, zorder=10)
@@ -302,20 +295,18 @@ with col_left:
             if np.isscalar(y): y = np.full_like(x_default, y)
             ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
             c1, c2 = st.columns(2)
-            with c1: a_val = parse_float_expr(st.text_input("적분 시작 (a)", value="-1"))
-            with c2: b_val = parse_float_expr(st.text_input("적분 끝 (b)", value="2"))
+            with c1: a_val = math_input("적분 시작 (a)", "-1")
+            with c2: b_val = math_input("적분 끝 (b)", "2")
             x_fill = np.linspace(a_val, b_val, 500)
             y_fill = f(x_fill)
             if np.isscalar(y_fill): y_fill = np.full_like(x_fill, y_fill)
             ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
         except: pass
 
-
     # --- 📍 점 추가 및 다중 컨트롤 UI ---
     st.markdown("---")
     st.write("📍 **점 추가 및 세부 제어 (엔터키)**")
-    st.caption("💡 `1/3, sqrt(2), A` 처럼 분수와 무리수를 자유롭게 섞어 쓰셔도 됩니다.")
-    st.text_input("좌표 입력칸", key="new_pt", placeholder="예: 1, 2 또는 1, 2, A", on_change=add_pt_callback)
+    st.text_input("좌표 입력칸", key="new_pt", placeholder="예: 1/3, sqrt2, A", on_change=add_pt_callback)
     
     for i, pt_dict in enumerate(st.session_state.pts_list):
         col1, col2, col3, col4, col5, col6 = st.columns([1.5, 1.2, 1.2, 1.5, 1.5, 1.0])
@@ -332,14 +323,13 @@ with col_left:
     for pt_dict in st.session_state.pts_list:
         try:
             parts = [p.strip() for p in pt_dict['raw'].split(',')]
-            px, py = parse_float_expr(parts[0]), parse_float_expr(parts[1])
+            px, py = robust_parse(parts[0]), robust_parse(parts[1])
             label = parts[2] if len(parts) > 2 else ""
 
             if not pt_dict.get('hide_line', False):
                 ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
                 ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
             
-            # 빈 점 / 꽉 찬 점 그리기
             if pt_dict.get('style', '꽉 찬 점') == "꽉 찬 점": ax.plot(px, py, 'ko', markersize=5, zorder=10)
             else: ax.plot(px, py, 'ko', markerfacecolor='white', markersize=5, markeredgewidth=1.2, zorder=10)
             
@@ -368,14 +358,14 @@ with col_left:
         for line in st.session_state.lines_list:
             try:
                 parts = line.split(',')
-                x1, y1, x2, y2 = map(parse_float_expr, parts)
+                x1, y1, x2, y2 = map(robust_parse, parts)
                 ax.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5, zorder=4)
             except: pass
 
     with c_tans:
         st.write("📈 **자동 접선 긋기 (이차/삼사차/원)**")
         st.caption("함수: `x좌표`, 원: `x좌표, 상` 또는 `x좌표, 하`")
-        st.text_input("예: 1/3 또는 3, 상", key="new_tan", on_change=add_tan_callback)
+        st.text_input("예: 1/3 또는 sqrt2, 상", key="new_tan", on_change=add_tan_callback)
         for i, tan_val in enumerate(st.session_state.tan_list):
             col1, col2 = st.columns([3, 1])
             col1.write(f"`접점 = {tan_val}`")
@@ -384,9 +374,8 @@ with col_left:
         for tan_val in st.session_state.tan_list:
             try:
                 parts = [p.strip() for p in tan_val.split(',')]
-                tx = parse_float_expr(parts[0])
+                tx = robust_parse(parts[0])
                 
-                # 원의 접선
                 if current_circle:
                     a_c, b_c, r_c = current_circle
                     if abs(tx - a_c) <= r_c + 1e-6:
@@ -395,14 +384,12 @@ with col_left:
                         ax.plot(tx, ty, 'ko', markersize=5, zorder=15)
                         
                         dx, dy = tx - a_c, ty - b_c
-                        # 💡 수직 접선(x = a) 버그 완벽 해결 (큰 값으로 그려 auto_y에서 제외)
                         if abs(dy) < 1e-6: 
                             ax.plot([tx, tx], [-1000, 1000], 'black', linewidth=1.0, zorder=4)
                         else:
                             tan_line_y = b_c + (r_c**2 - dx*(x_default - a_c)) / dy
                             ax.plot(x_default, tan_line_y, 'black', linewidth=1.0, zorder=4)
                 
-                # 다항/이차함수 접선
                 elif current_f and current_df:
                     slope = float(current_df(tx))
                     y_val = float(current_f(tx))
@@ -415,12 +402,10 @@ with col_left:
     st.markdown("---")
     o_pos = st.radio("원점(O) 기호 위치 선택", ["기본 (왼쪽 아래)", "오른쪽 아래", "왼쪽 위", "오른쪽 위", "숨기기"], horizontal=True)
 
-    # 💡 지능형 Y축 자동 맞춤 (세로 접선이나 축 점선이 범위 계산을 망치지 못하게 철벽 방어)
     if auto_y:
         min_y, max_y = 0, 0
         for line in ax.get_lines():
             ydata = line.get_ydata()
-            # 10개 이상의 점으로 이루어진 선(진짜 그래프 곡선)만 범위 계산에 포함
             if len(ydata) > 10:
                 valid_y = ydata[np.isfinite(ydata)]
                 if len(valid_y) > 0:
@@ -445,8 +430,11 @@ with col_left:
     ax.spines['right'].set_color('none'); ax.spines['top'].set_color('none')
     ax.axhline(0, color='black', linewidth=1.2, zorder=2)
     ax.axvline(0, color='black', linewidth=1.2, zorder=2)
-    ax.plot(plot_x_max, 0, ">k", clip_on=False, zorder=10)
-    ax.plot(0, final_y_max, "^k", clip_on=False, zorder=10)
+    
+    # 💡 stealth 화살표 (annotate의 -|> 스타일 활용)
+    arrow_style = dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=18)
+    ax.annotate('', xy=(plot_x_max, 0), xytext=(-1, 0), textcoords='offset points', arrowprops=arrow_style, annotation_clip=False, zorder=10)
+    ax.annotate('', xy=(0, final_y_max), xytext=(0, -1), textcoords='offset points', arrowprops=arrow_style, annotation_clip=False, zorder=10)
     
     ax.text(plot_x_max + (plot_x_max - plot_x_min)*0.03, 0, r'$x$', ha='left', va='center', fontsize=14, fontfamily='stix', zorder=20)
     ax.text(0, final_y_max + (final_y_max - final_y_min)*0.03, r'$y$', ha='center', va='bottom', fontsize=14, fontfamily='stix', zorder=20)
