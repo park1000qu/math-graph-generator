@@ -13,8 +13,9 @@ plt.rcParams['font.family'] = 'HYhwpEQ' # 한컴 수식 폰트
 plt.rcParams['font.size'] = 11
 plt.rcParams['axes.unicode_minus'] = False 
 
-st.set_page_config(page_title="수학 모의고사 그래프 생성기", page_icon="📐", layout="wide")
-st.title("📐 고등 수학 모의고사 흑백 그래프 생성기")
+# 💡 타이틀 변경
+st.set_page_config(page_title="평가자료용 수학 그래프 생성기", page_icon="📐", layout="wide")
+st.title("📐 평가자료용 수학 그래프 생성기")
 st.info("💡 **모든 숫자 입력칸**에 `1/3`, `sqrt2`, `2sqrt3`, `pi/2` 등 수식을 그대로 입력하실 수 있습니다!")
 
 categories = [
@@ -24,7 +25,7 @@ categories = [
     "미적분: 구간별 정의 함수 (불연속/극한)", "정적분함수 (넓이 색칠)",
     "기하: 원의 방정식", "기하: 이차곡선 (포물선, 타원, 쌍곡선)"
 ]
-category = st.selectbox("과목 및 단원 선택", categories)
+category = st.selectbox("메인 그래프 형태 선택", categories)
 
 st.divider()
 
@@ -75,15 +76,9 @@ bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 
 # --- 세션 상태 초기화 ---
 if 'pts_list' not in st.session_state: st.session_state.pts_list = []
-else:
-    for i in range(len(st.session_state.pts_list)):
-        if isinstance(st.session_state.pts_list[i], str):
-            st.session_state.pts_list[i] = {"raw": st.session_state.pts_list[i], "hide_coord": False, "hide_line": False, "label_pos": "오른쪽 위", "style": "꽉 찬 점"}
-        elif "style" not in st.session_state.pts_list[i]:
-            st.session_state.pts_list[i]["style"] = "꽉 찬 점"
-
 if 'lines_list' not in st.session_state: st.session_state.lines_list = []
 if 'tan_list' not in st.session_state: st.session_state.tan_list = []
+if 'extra_graphs' not in st.session_state: st.session_state.extra_graphs = [] # 다중 그래프용 세션 추가
 
 def add_pt_callback():
     if st.session_state.new_pt:
@@ -108,6 +103,7 @@ with col_left:
     plot_x_max = max(0, x_max)
     x_default = np.linspace(plot_x_min, plot_x_max, 3000)
     
+    # 1. 메인 그래프 렌더링
     if category == "일차함수":
         st.latex(r"\mathbf{[기본형]} \quad y = ax + b")
         c1, c2 = st.columns(2)
@@ -303,6 +299,24 @@ with col_left:
             ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
         except: pass
 
+    # 💡 2. 다중 그래프 추가 렌더링 (메인 그래프 위에 덧그리기)
+    for g in st.session_state.extra_graphs:
+        try:
+            ex = parse_func(g['expr'])
+            f_ext = sp.lambdify(x_sym, ex, ['numpy', {'e': np.e}])
+            
+            # 지정된 범위가 없으면 화면 전체를 그림
+            g_min = robust_parse(g['xmin']) if g['xmin'].strip() else plot_x_min
+            g_max = robust_parse(g['xmax']) if g['xmax'].strip() else plot_x_max
+            if g_min > g_max: g_min, g_max = g_max, g_min
+            
+            x_ext = np.linspace(g_min, g_max, 1500)
+            y_ext = f_ext(x_ext)
+            if np.isscalar(y_ext): y_ext = np.full_like(x_ext, y_ext)
+            
+            ax.plot(x_ext, y_ext, 'black', linewidth=1.5, zorder=5)
+        except: pass
+
     # --- 📍 점 추가 및 다중 컨트롤 UI ---
     st.markdown("---")
     st.write("📍 **점 추가 및 세부 제어 (엔터키)**")
@@ -344,7 +358,7 @@ with col_left:
                 if py != 0: ax.annotate(f"{py:g}", xy=(0, py), xytext=(x_off_y, 0), textcoords='offset points', ha=ha_y, va='center', fontsize=11, fontfamily='HYhwpEQ', bbox=bbox_white, zorder=20)
         except: pass
 
-    # --- 🔗 점선 연결 및 📈 접선 그리기 ---
+    # --- 🔗 선, 접선, 추가 그래프 레이아웃 ---
     st.markdown("---")
     c_lines, c_tans = st.columns(2)
     
@@ -364,8 +378,7 @@ with col_left:
 
     with c_tans:
         st.write("📈 **자동 접선 긋기 (이차/삼사차/원)**")
-        show_tan_pt = st.checkbox("접점(●) 기호 표시", value=True)
-        st.caption("함수: `x좌표`, 원: `x좌표, 상` 또는 `x좌표, 하`")
+        st.caption("함수: `x좌표`, 원: `x좌표, 상` 또는 `하`")
         st.text_input("예: 1/3 또는 sqrt2, 상", key="new_tan", on_change=add_tan_callback)
         for i, tan_val in enumerate(st.session_state.tan_list):
             col1, col2 = st.columns([3, 1])
@@ -382,9 +395,7 @@ with col_left:
                     if abs(tx - a_c) <= r_c + 1e-6:
                         dy_offset = np.sqrt(max(0, r_c**2 - (tx - a_c)**2))
                         ty = b_c - dy_offset if (len(parts) > 1 and "하" in parts[1]) else b_c + dy_offset
-                        
-                        if show_tan_pt:
-                            ax.plot(tx, ty, 'ko', markersize=5, zorder=15)
+                        ax.plot(tx, ty, 'ko', markersize=5, zorder=15)
                         
                         dx, dy = tx - a_c, ty - b_c
                         if abs(dy) < 1e-6: 
@@ -398,20 +409,43 @@ with col_left:
                     y_val = float(current_f(tx))
                     tan_y = slope * (x_default - tx) + y_val
                     ax.plot(x_default, tan_y, 'black', linewidth=1.0, zorder=4)
-                    
-                    if show_tan_pt:
-                        ax.plot(tx, y_val, 'ko', markersize=5, zorder=15)
+                    ax.plot(tx, y_val, 'ko', markersize=5, zorder=15)
             except: pass
 
-    # --- 마무리 렌더링 설정 ---
+    # 💡 3. 다중 그래프 추가 UI 
     st.markdown("---")
-    o_pos = st.radio("원점(O) 기호 위치 선택", ["기본 (왼쪽 아래)", "오른쪽 아래", "왼쪽 위", "오른쪽 위", "숨기기"], horizontal=True)
+    c_extra, c_options = st.columns([1.5, 1])
+    
+    with c_extra:
+        st.write("➕ **다중 그래프 추가 (범위 제한)**")
+        with st.form("extra_graph_form", clear_on_submit=True):
+            e_expr = st.text_input("수식 (예: 2x+1, -x^2+4)")
+            c_min, c_max = st.columns(2)
+            e_min = c_min.text_input("x 최소 (빈칸=전체)")
+            e_max = c_max.text_input("x 최대 (빈칸=전체)")
+            submit_extra = st.form_submit_button("그래프 겹쳐 그리기")
+            if submit_extra and e_expr:
+                st.session_state.extra_graphs.append({"expr": e_expr, "xmin": e_min, "xmax": e_max})
+                st.rerun()
 
+        for i, g in enumerate(st.session_state.extra_graphs):
+            col1, col2 = st.columns([5, 1])
+            range_str = f"[{g['xmin']} ~ {g['xmax']}]" if (g['xmin'] or g['xmax']) else "[전체]"
+            col1.write(f"`{g['expr']}`  {range_str}")
+            if col2.button("삭제", key=f"del_g_{i}"):
+                st.session_state.extra_graphs.pop(i)
+                st.rerun()
+
+    with c_options:
+        st.write("⚙️ **기타 설정**")
+        o_pos = st.radio("원점(O) 위치", ["기본 (왼쪽 아래)", "오른쪽 아래", "왼쪽 위", "오른쪽 위", "숨기기"])
+
+    # --- 마무리 렌더링 설정 ---
     if auto_y:
         min_y, max_y = 0, 0
         for line in ax.get_lines():
             ydata = line.get_ydata()
-            if len(ydata) > 10:
+            if len(ydata) > 10: # 점선이나 접선이 아닌 진짜 그래프 곡선만 인식
                 valid_y = ydata[np.isfinite(ydata)]
                 if len(valid_y) > 0:
                     min_y = min(min_y, np.min(valid_y))
@@ -436,7 +470,6 @@ with col_left:
     ax.axhline(0, color='black', linewidth=1.2, zorder=2)
     ax.axvline(0, color='black', linewidth=1.2, zorder=2)
     
-    # 💡 stealth 화살표 (annotate의 -|> 스타일 활용)
     arrow_style = dict(arrowstyle="-|>", color='black', lw=1.2, mutation_scale=18)
     ax.annotate('', xy=(plot_x_max, 0), xytext=(-1, 0), textcoords='offset points', arrowprops=arrow_style, annotation_clip=False, zorder=10)
     ax.annotate('', xy=(0, final_y_max), xytext=(0, -1), textcoords='offset points', arrowprops=arrow_style, annotation_clip=False, zorder=10)
