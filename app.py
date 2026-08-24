@@ -48,11 +48,19 @@ def parse_func(expr_str):
 
 bbox_white = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=1.0)
 
+# --- 세션 상태 초기화 (엔터키 리스트용) ---
 if 'pts_list' not in st.session_state: st.session_state.pts_list = []
+if 'lines_list' not in st.session_state: st.session_state.lines_list = []
+
 def add_pt_callback():
     if st.session_state.new_pt:
         st.session_state.pts_list.append(st.session_state.new_pt)
         st.session_state.new_pt = ""
+
+def add_line_callback():
+    if st.session_state.new_line:
+        st.session_state.lines_list.append(st.session_state.new_line)
+        st.session_state.new_line = ""
 
 with col_left:
     st.subheader("그래프 세부 설정")
@@ -184,12 +192,12 @@ with col_left:
             ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
         except: pass
 
-    # --- 리스트형 점/선 추가 및 점선 연결 복구 ---
+    # --- 리스트형 점 및 점선 연결 추가 (UI 통일) ---
     st.markdown("---")
     c_pts, c_lines = st.columns(2)
     
     with c_pts:
-        st.write("📍 **점 및 축 보조선 추가 (엔터키)**")
+        st.write("📍 **점 및 축 보조선 (엔터키)**")
         st.text_input("점 좌표 (예: 1, 2)", key="new_pt", on_change=add_pt_callback)
         
         for i, pt in enumerate(st.session_state.pts_list):
@@ -220,18 +228,23 @@ with col_left:
             except: pass
 
     with c_lines:
-        st.write("🔗 **두 점 사이 점선 연결**")
-        st.caption("예: 1, 2, 3, 4 (x1, y1 에서 x2, y2)")
-        segments_input = st.text_area("좌표 입력", height=100)
-        if segments_input:
-            for line in segments_input.strip().split('\n'):
-                if line:
-                    try:
-                        x1, y1, x2, y2 = map(float, line.split(','))
-                        ax.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5, zorder=4)
-                    except: pass
+        st.write("🔗 **두 점 사이 점선 연결 (엔터키)**")
+        st.text_input("선 좌표 (예: 1, 2, 3, 4)", key="new_line", on_change=add_line_callback)
+        
+        for i, line in enumerate(st.session_state.lines_list):
+            col1, col2 = st.columns([5, 1])
+            col1.write(f"`{line}`")
+            if col2.button("삭제", key=f"del_line_{i}"):
+                st.session_state.lines_list.pop(i)
+                st.rerun()
 
-    # --- 💡 원점 O 위치 수동 제어 추가 ---
+        for line in st.session_state.lines_list:
+            try:
+                x1, y1, x2, y2 = map(float, line.split(','))
+                ax.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5, zorder=4)
+            except: pass
+
+    # --- 원점 O 위치 수동 제어 ---
     st.markdown("---")
     o_pos = st.radio("원점(O) 기호 위치 선택", ["기본 (왼쪽 아래)", "오른쪽 아래", "왼쪽 위", "오른쪽 위", "숨기기"], horizontal=True)
 
