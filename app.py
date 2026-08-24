@@ -14,7 +14,7 @@ st.set_page_config(page_title="수학 모의고사 그래프 생성기", page_ic
 st.title("📐 고등 수학 모의고사 흑백 그래프 생성기")
 
 categories = [
-    "일차함수", "이차함수", "유리함수", "무리함수", 
+    "일차함수", "이차함수", "다항함수: 3차/4차함수", "유리함수", "무리함수", 
     "지수함수", "로그함수", 
     "삼각함수: 사인(sin)", "삼각함수: 코사인(cos)", "삼각함수: 탄젠트(tan)",
     "미적분: 구간별 정의 함수 (불연속/극한)", "정적분함수 (넓이 색칠)"
@@ -82,6 +82,17 @@ with col_left:
         with c2: p = st.number_input("꼭짓점 x (p)", value=0.0)
         with c3: q = st.number_input("꼭짓점 y (q)", value=0.0)
         ax.plot(x_default, a * (x_default - p)**2 + q, 'black', linewidth=1.5, zorder=5)
+
+    elif category == "다항함수: 3차/4차함수":
+        expr_str = st.text_input("함수식 입력 (예: x**3 - 3*x 또는 (x-1)*(x-2)**2)", value="x**3 - 3*x")
+        try:
+            expr_sym = parse_func(expr_str)
+            st.latex(sp.latex(expr_sym))
+            f = sp.lambdify(x_sym, expr_sym, ['numpy', {'e': np.e}])
+            y = f(x_default)
+            if np.isscalar(y): y = np.full_like(x_default, y)
+            ax.plot(x_default, y, 'black', linewidth=1.5, zorder=5)
+        except: pass
 
     elif category == "유리함수":
         c1, c2, c3 = st.columns(3)
@@ -192,13 +203,13 @@ with col_left:
             ax.fill_between(x_fill, y_fill, 0, color='gray', alpha=0.3, zorder=4)
         except: pass
 
-    # --- 리스트형 점 및 점선 연결 추가 (UI 통일) ---
+    # --- 리스트형 점 및 점선 연결 추가 ---
     st.markdown("---")
     c_pts, c_lines = st.columns(2)
     
     with c_pts:
-        st.write("📍 **점 및 축 보조선 (엔터키)**")
-        st.text_input("점 좌표 (예: 1, 2)", key="new_pt", on_change=add_pt_callback)
+        st.write("📍 **점 추가 및 이름 표시 (엔터키)**")
+        st.text_input("예: 1, 2 또는 1, 2, A", key="new_pt", on_change=add_pt_callback)
         
         for i, pt in enumerate(st.session_state.pts_list):
             col1, col2 = st.columns([5, 1])
@@ -209,11 +220,20 @@ with col_left:
 
         for pt in st.session_state.pts_list:
             try:
-                px, py = map(float, pt.split(','))
+                parts = [p.strip() for p in pt.split(',')]
+                px = float(parts[0])
+                py = float(parts[1])
+                label = parts[2] if len(parts) > 2 else ""
+
                 ax.plot([px, px], [0, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
                 ax.plot([0, px], [py, py], 'k--', linewidth=1, alpha=0.8, zorder=3)
                 ax.plot(px, py, 'ko', markersize=5, zorder=10)
                 
+                # 점 이름 표시 (올곧은 로만/정자체)
+                if label:
+                    ax.annotate(label, xy=(px, py), xytext=(6, 6), textcoords='offset points', 
+                                ha='left', va='bottom', fontsize=12, fontfamily='Hancom Batang', fontstyle='normal', bbox=bbox_white, zorder=25)
+
                 va_x = 'top' if py >= 0 else 'bottom'
                 y_off_x = -7 if py >= 0 else 7
                 ha_y = 'right' if px >= 0 else 'left'
@@ -229,7 +249,7 @@ with col_left:
 
     with c_lines:
         st.write("🔗 **두 점 사이 점선 연결 (엔터키)**")
-        st.text_input("선 좌표 (예: 1, 2, 3, 4)", key="new_line", on_change=add_line_callback)
+        st.text_input("예: 1, 2, 3, 4", key="new_line", on_change=add_line_callback)
         
         for i, line in enumerate(st.session_state.lines_list):
             col1, col2 = st.columns([5, 1])
@@ -244,11 +264,9 @@ with col_left:
                 ax.plot([x1, x2], [y1, y2], 'k--', linewidth=1.5, zorder=4)
             except: pass
 
-    # --- 원점 O 위치 수동 제어 ---
     st.markdown("---")
     o_pos = st.radio("원점(O) 기호 위치 선택", ["기본 (왼쪽 아래)", "오른쪽 아래", "왼쪽 위", "오른쪽 위", "숨기기"], horizontal=True)
 
-    # --- 자동 스케일링 로직 ---
     if auto_y:
         min_y, max_y = 0, 0
         for line in ax.get_lines():
@@ -283,18 +301,20 @@ with col_left:
 
     ax.plot(plot_x_max, 0, ">k", clip_on=False, zorder=10)
     ax.plot(0, final_y_max, "^k", clip_on=False, zorder=10)
+    
+    # x, y 좌표축 기호는 이탤릭체(기울임) 적용 (r'$x$', r'$y$')
     ax.text(plot_x_max + (plot_x_max - plot_x_min)*0.03, 0, r'$x$', ha='left', va='center', fontsize=14, fontfamily='stix', zorder=20)
     ax.text(0, final_y_max + (final_y_max - final_y_min)*0.03, r'$y$', ha='center', va='bottom', fontsize=14, fontfamily='stix', zorder=20)
     
-    # 설정한 원점 위치 반영
     if o_pos != "숨기기":
         if o_pos == "기본 (왼쪽 아래)": o_x, o_y, o_ha, o_va = -8, -8, 'right', 'top'
         elif o_pos == "오른쪽 아래": o_x, o_y, o_ha, o_va = 8, -8, 'left', 'top'
         elif o_pos == "왼쪽 위": o_x, o_y, o_ha, o_va = -8, 8, 'right', 'bottom'
         elif o_pos == "오른쪽 위": o_x, o_y, o_ha, o_va = 8, 8, 'left', 'bottom'
         
-        ax.annotate(r'$O$', xy=(0, 0), xytext=(o_x, o_y), textcoords='offset points', 
-                    ha=o_ha, va=o_va, fontsize=11, fontfamily='Hancom Batang', bbox=bbox_white, zorder=20)
+        # 원점 O 기호는 로만(정자체) 적용 (r'$\mathrm{O}$')
+        ax.annotate(r'$\mathrm{O}$', xy=(0, 0), xytext=(o_x, o_y), textcoords='offset points', 
+                    ha=o_ha, va=o_va, fontsize=13, fontfamily='stix', bbox=bbox_white, zorder=20)
 
     ax.set_xticks([])
     ax.set_yticks([])
